@@ -1,0 +1,90 @@
+--- pcp-pmda-cluster-1.0.1/src/pmda.c.orig	2009-10-19 18:38:37.000000000 +0200
++++ pcp-pmda-cluster-1.0.1/src/pmda.c	2012-12-26 21:29:43.792416457 +0100
+@@ -194,7 +194,7 @@
+     }
+ 
+     if (tc->result == NULL) {
+-	sts = __pmDecodeResult(tc->pb, PDU_BINARY, &tc->result);
++	sts = __pmDecodeResult(tc->pb, &tc->result);
+ 	if (sts < 0 || !tc->result) {
+ 	    fprintf(stderr, "cluster_fetchCallback: Error: found client %d but pb == NULL\n", tc->fd);
+ 	    return PM_ERR_VALUE;
+--- pcp-pmda-cluster-1.0.1/src/server.c.orig	2009-10-19 18:38:37.000000000 +0200
++++ pcp-pmda-cluster-1.0.1/src/server.c	2012-12-26 21:32:05.325746841 +0100
+@@ -79,7 +79,7 @@
+     FD_SET(fd, &allFds);
+     i = 1;
+     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &i,
+-		   (mysocklen_t)sizeof(i)) < 0) {
++		   (socklen_t)sizeof(i)) < 0) {
+ 	__pmNotifyErr(LOG_ERR, "OpenRequestSocket(%d, 0x%x) setsockopt(nodelay): %s\n",
+ 	    port, ipAddr, strerror(errno));
+ 	close(fd);
+@@ -87,19 +87,19 @@
+     }
+ 
+     /* Don't linger on close */
+-    if (setsockopt(fd, SOL_SOCKET, SO_LINGER, (char *)&noLinger, (mysocklen_t)sizeof(noLinger)) < 0) {
++    if (setsockopt(fd, SOL_SOCKET, SO_LINGER, (char *)&noLinger, (socklen_t)sizeof(noLinger)) < 0) {
+ 	__pmNotifyErr(LOG_ERR, "OpenRequestSocket(%d, 0x%x) setsockopt(nolinger): %s\n",
+ 	    port, ipAddr, strerror(errno));
+     }
+ 
+     /* Ignore dead client connections */
+-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&one, (mysocklen_t)sizeof(one)) < 0) {
++    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (char *)&one, (socklen_t)sizeof(one)) < 0) {
+ 	__pmNotifyErr(LOG_ERR, "OpenRequestSocket(%d, 0x%x) setsockopt(SO_REUSEADDR): %s\n",
+ 	    port, ipAddr, strerror(errno));
+     }
+ 
+     /* and keep alive please - pv 916354 bad networks eat fds */
+-    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (char *)&one, (mysocklen_t)sizeof(one)) < 0) {
++    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (char *)&one, (socklen_t)sizeof(one)) < 0) {
+ 	__pmNotifyErr(LOG_ERR, "OpenRequestSocket(%d, 0x%x) setsockopt(SO_KEEPALIVE): %s\n",
+ 	    port, ipAddr, strerror(errno));
+     }
+@@ -132,7 +132,7 @@
+ cluster_accept_client(int reqfd)
+ {
+     int			i, fd;
+-    mysocklen_t		addrlen;
++    socklen_t		addrlen;
+     cluster_client_t	*tc;
+ 
+     for (i=0; i < n_cluster_clients; i++) {
+@@ -573,7 +573,7 @@
+ 
+ 	indom_save(PM_INDOM_NULL); /* 1st RESULT saves cache of last indom */
+ 	pb = tc->pb;
+-	sts = __pmGetPDU(tc->fd, PDU_BINARY, 60, &tc->pb);
++	sts = __pmGetPDU(tc->fd, ANY_SIZE, 60, &tc->pb);
+ 	__pmPinPDUBuf(tc->pb);
+ 	if (pb)
+ 	    __pmUnpinPDUBuf(pb);
+--- pcp-pmda-cluster-1.0.1/src/pmclusterd.c.orig	2009-10-19 18:38:37.000000000 +0200
++++ pcp-pmda-cluster-1.0.1/src/pmclusterd.c	2012-12-26 21:36:57.022407428 +0100
+@@ -61,12 +61,12 @@
+ 
+     i = 1;
+     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (char *) &i,
+-	    (mysocklen_t)sizeof(i)) < 0) {
++	    (socklen_t)sizeof(i)) < 0) {
+ 	fprintf(stderr, "pmclusterd: Warning: setsockopt(nodelay): %s\n", strerror(errno));
+         /* ignore */
+     }
+ 
+-    if (setsockopt(fd, SOL_SOCKET, SO_LINGER, (char *) &noLinger, (mysocklen_t)sizeof(noLinger)) < 0) {
++    if (setsockopt(fd, SOL_SOCKET, SO_LINGER, (char *) &noLinger, (socklen_t)sizeof(noLinger)) < 0) {
+ 	fprintf(stderr, "pmclusterd: Warning: setsockopt(nolinger): %s\n", strerror(errno));
+         /* ignore */
+     }
+--- pcp-pmda-cluster-1.0.1/src/clusterns.pl.orig	2009-10-20 15:31:18.000000000 +0200
++++ pcp-pmda-cluster-1.0.1/src/clusterns.pl	2012-12-27 17:49:00.214224982 +0100
+@@ -120,6 +120,7 @@
+    my @fields = split;
+    if (@fields == 2) {
+        my ($rawDom, $rawcluster, $item) = split /:/, $fields[1];
++       next if($rawcluster eq '*'); # omit wildcards
+        if (length($item) && $rawDom != 'CLUSTER') {
+ 	   # >= 3 colon separated fields
+ 	   if (!exists $rawDomIds{$rawDom}) {
